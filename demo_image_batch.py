@@ -1,10 +1,12 @@
 import argparse
 import math
+import os
 import time
 
 import cv2
 import numpy as np
 from head_pose import HeadPoseEstimator
+from img_utils.files import images_in_dir, filename
 from scipy.ndimage.filters import gaussian_filter
 
 import geometry as geo
@@ -196,7 +198,7 @@ def process(input_image, params, model_params):
                     subset = np.vstack([subset, row])
 
     # delete some rows of subset which has few parts occur
-    deleteIdx = []
+    deleteIdx = [];
     for i in range(len(subset)):
         if subset[i][-1] < 4 or subset[i][-2] / subset[i][-1] < 0.4:
             deleteIdx.append(i)
@@ -225,25 +227,24 @@ def process(input_image, params, model_params):
         body_pose = geo.BodyPose.from_connected_body_parts(limbs)
 
         # geo.draw_body_pose_key_points(body_pose, canvas, colors)
-        # if body_pose.is_hands_up(threshold=30):
-        #     print('----------hand up----------')
-        #     x1, y1, x2, y2 = body_pose.mbr()
-        #     cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-        #     cv2.putText(canvas, 'Hand up', (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
-        #     if body_pose.left_elbow is not None:
-        #         print('===left_elbow===: {}'.format(body_pose.nose))
-        #         cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.left_elbow), 4, (0, 255, 255), thickness=-1)
-        #
-        #     if body_pose.nose is not None:
-        #         print('===nose===: {}'.format(body_pose.nose))
-        #         cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.nose), 4, (0, 255, 0), thickness=-1)
-        #     if body_pose.left_wrist is not None:
-        #         print('===left_wrist===: {}'.format(body_pose.left_wrist))
-        #         cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.left_wrist), 4, (255, 0, 0), thickness=-1)
-        #     if body_pose.right_wrist is not None:
-        #         print('===right_wrist===: {}'.format(body_pose.right_wrist))
-        #         cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.right_wrist), 4, (0, 0, 255), thickness=-1)
-        body_pose.head_direction(canvas, offset2nose=30)
+        if body_pose.is_hands_up(threshold=30):
+            print('----------hand up----------')
+            x1, y1, x2, y2 = body_pose.mbr()
+            cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+            cv2.putText(canvas, 'Hand up', (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
+            if body_pose.left_elbow is not None:
+                print('===left_elbow===: {}'.format(body_pose.nose))
+                cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.left_elbow), 4, (0, 255, 255), thickness=-1)
+
+            if body_pose.nose is not None:
+                print('===nose===: {}'.format(body_pose.nose))
+                cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.nose), 4, (0, 255, 0), thickness=-1)
+            if body_pose.left_wrist is not None:
+                print('===left_wrist===: {}'.format(body_pose.left_wrist))
+                cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.left_wrist), 4, (255, 0, 0), thickness=-1)
+            if body_pose.right_wrist is not None:
+                print('===right_wrist===: {}'.format(body_pose.right_wrist))
+                cv2.circle(canvas, geo.convert_2_int_tuple(body_pose.right_wrist), 4, (0, 0, 255), thickness=-1)
         # print(body_pose.nose_2eyes())
         # if body_pose.head_key_points() is not None:
         #     rotation_vector, translation_vector = head_pose.solve_pose(body_pose.head_key_points())
@@ -257,16 +258,15 @@ def process(input_image, params, model_params):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image', type=str, required=True, help='input image')
-    parser.add_argument('--output', type=str, default='result.png', help='output image')
+    parser.add_argument('--images', type=str, required=True, help='input images dir')
+    parser.add_argument('--output', type=str, default='result.png', help='output images dir')
     parser.add_argument('--model', type=str, default='model/keras/model.h5', help='path to the weights file')
 
     args = parser.parse_args()
-    input_image = args.image
-    output = args.output
+    input_images = args.images
+    outputs = args.output
     keras_weights_file = args.model
 
-    tic = time.time()
     print('start processing...')
 
     # load model
@@ -280,11 +280,13 @@ if __name__ == '__main__':
     params, model_params = config_reader()
 
     # generate image with body parts
-    canvas = process(input_image, params, model_params)
+    image_files = images_in_dir(input_images)
+    for im_f in image_files:
+        tic = time.time()
+        canvas = process(im_f, params, model_params)
+        toc = time.time()
+        print ('processing time is %.5f' % (toc - tic))
 
-    toc = time.time()
-    print ('processing time is %.5f' % (toc - tic))
-
-    cv2.imwrite(output, canvas)
+        cv2.imwrite(os.path.join(outputs, filename(im_f)), canvas)
 
     cv2.destroyAllWindows()

@@ -1,13 +1,15 @@
-from keras.models import Model
-from keras.layers.merge import Concatenate
+from keras.initializers import random_normal, constant
 from keras.layers import Activation, Input, Lambda
 from keras.layers.convolutional import Conv2D
-from keras.layers.pooling import MaxPooling2D
+from keras.layers.merge import Concatenate
 from keras.layers.merge import Multiply
+from keras.layers.pooling import MaxPooling2D
+from keras.models import Model
 from keras.regularizers import l2
-from keras.initializers import random_normal,constant
+
 
 def relu(x): return Activation('relu')(x)
+
 
 def conv(x, nf, ks, name, weight_decay):
     kernel_reg = l2(weight_decay[0]) if weight_decay else None
@@ -20,9 +22,11 @@ def conv(x, nf, ks, name, weight_decay):
                bias_initializer=constant(0.0))(x)
     return x
 
+
 def pooling(x, ks, st, name):
     x = MaxPooling2D((ks, ks), strides=(st, st), name=name)(x)
     return x
+
 
 def vgg_block(x, weight_decay):
     # Block 1
@@ -102,7 +106,7 @@ def stageT_block(x, num_p, stage, branch, weight_decay):
 def apply_mask(x, mask1, mask2, num_p, stage, branch):
     w_name = "weight_stage%d_L%d" % (stage, branch)
     if num_p == 38:
-        w = Multiply(name=w_name)([x, mask1]) # vec_weight
+        w = Multiply(name=w_name)([x, mask1])  # vec_weight
 
     else:
         w = Multiply(name=w_name)([x, mask2])  # vec_heat
@@ -110,7 +114,6 @@ def apply_mask(x, mask1, mask2, num_p, stage, branch):
 
 
 def get_training_model(weight_decay):
-
     stages = 6
     np_branch1 = 38
     np_branch2 = 19
@@ -130,7 +133,7 @@ def get_training_model(weight_decay):
     inputs.append(vec_weight_input)
     inputs.append(heat_weight_input)
 
-    img_normalized = Lambda(lambda x: x / 256 - 0.5)(img_input) # [-0.5, 0.5]
+    img_normalized = Lambda(lambda x: x / 256 - 0.5)(img_input)  # [-0.5, 0.5]
 
     # VGG
     stage0_out = vgg_block(img_normalized, weight_decay)
@@ -178,7 +181,7 @@ def get_testing_model():
 
     img_input = Input(shape=img_input_shape)
 
-    img_normalized = Lambda(lambda x: x / 256 - 0.5)(img_input) # [-0.5, 0.5]
+    img_normalized = Lambda(lambda x: x / 256 - 0.5)(img_input)  # [-0.5, 0.5]
 
     # VGG
     stage0_out = vgg_block(img_normalized, None)
@@ -198,7 +201,7 @@ def get_testing_model():
         stageT_branch1_out = stageT_block(x, np_branch1, sn, 1, None)
         stageT_branch2_out = stageT_block(x, np_branch2, sn, 2, None)
 
-        if (sn < stages):
+        if sn < stages:
             x = Concatenate()([stageT_branch1_out, stageT_branch2_out, stage0_out])
 
     model = Model(inputs=[img_input], outputs=[stageT_branch1_out, stageT_branch2_out])
