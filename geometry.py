@@ -6,6 +6,9 @@ limb_sequence = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9],
                  [9, 10], [10, 11], [2, 12], [12, 13], [13, 14], [2, 1],
                  [1, 15], [15, 17], [1, 16], [16, 18], [3, 17], [6, 18]]
 
+# point_center_bottom = (0, 719)
+point_center_bottom = (639, 719)
+
 
 class BodyPose:
 
@@ -149,13 +152,14 @@ class BodyPose:
 
         return bp
 
-    def acromial_left(self, (neck, shoulder)):
-        self.neck = neck
-        self.left_shoulder = shoulder
+    def acromial_left(self, neck_and_shoulder):
 
-    def forearm_left(self, (wrist, elbow)):
-        self.left_wrist = wrist
-        self.left_elbow = elbow
+        self.neck = neck_and_shoulder[0]
+        self.left_shoulder = neck_and_shoulder[1]
+
+    def forearm_left(self, wrist_and_elbow):
+        self.left_wrist = wrist_and_elbow[0]
+        self.left_elbow = wrist_and_elbow[1]
 
     def _append_eye(self, points):
         if self.left_eye is not None:
@@ -183,10 +187,14 @@ class BodyPose:
                     points.append([self.right_eye[1], self.right_eye[0]])
 
                 x2, y2 = _centroid(points)
-                x0, y0 = _x0_y0(x1, y1, x2, y2, offset2nose)
+                x0, y0 = point_on_line_by_offset(x1, y1, x2, y2, offset2nose)
 
                 cv2.line(img, (int(x2), int(y2)), (int(x0), int(y0)), (255, 0, 255), 2)
-                # cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+
+                angle = angle_of_lines(((x2, y2), (x0, y0)), ((x2, y2), point_center_bottom))
+                cv2.putText(img, str(int(angle)), (int(x2), int(y2 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                            (128, 200, 128), 2)
+
             elif self.right_ear is not None:
                 x1 = self.right_ear[1]
                 y1 = self.right_ear[0]
@@ -196,9 +204,12 @@ class BodyPose:
                     points.append([self.right_eye[1], self.right_eye[0]])
                 x2, y2 = _centroid(points)
 
-                x0, y0 = _x0_y0(x1, y1, x2, y2, offset2nose)
+                x0, y0 = point_on_line_by_offset(x1, y1, x2, y2, offset2nose)
                 cv2.line(img, (int(x2), int(y2)), (int(x0), int(y0)), (255, 0, 255), 2)
-                # cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+
+                angle = angle_of_lines(((x2, y2), (x0, y0)), ((x2, y2), point_center_bottom))
+                cv2.putText(img, str(int(angle)), (int(x2), int(y2 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                            (128, 200, 128), 2)
             elif self.left_ear is not None:
                 x1 = self.left_ear[1]
                 y1 = self.left_ear[0]
@@ -208,9 +219,13 @@ class BodyPose:
                     points.append([self.left_eye[1], self.left_eye[0]])
 
                 x2, y2 = _centroid(points)
-                x0, y0 = _x0_y0(x1, y1, x2, y2, offset2nose)
+                x0, y0 = point_on_line_by_offset(x1, y1, x2, y2, offset2nose)
                 cv2.line(img, (int(x2), int(y2)), (int(x0), int(y0)), (255, 0, 255), 2)
-                # cv2.line(img, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 2)
+
+                angle = angle_of_lines(((x2, y2), (x0, y0)), ((x2, y2), point_center_bottom))
+                cv2.putText(img, str(int(angle)), (int(x2), int(y2 - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.65,
+                            (128, 200, 128), 2)
+                # cv2.line(img, (int(x2), int(y2)), point_center_bottom, (255, 0, 255), 2)
         return img
 
     def is_hands_up(self, threshold=45):
@@ -286,7 +301,19 @@ class BodyPose:
         if self.right_ankle is not None:
             all_parts.append(self.right_ankle)
 
-        return max_rectangle(all_parts)
+        min_x, min_y, max_x, max_y = max_rectangle(all_parts)
+        height = max_y - min_y
+        width = max_x - min_x
+        delta_y = height / 10
+        delta_x = width / 5
+        if self.nose is not None and self.neck is not None:
+            delta_y = abs(self.nose[0] - self.neck[0])
+
+        min_x = max(min_x - delta_x, 0)
+        min_y = max(min_y - delta_y, 0)
+        max_x = max_x + delta_x
+        max_y = max_y + delta_y
+        return min_x, min_y, max_x, max_y
 
     def left_hand_up(self, threshold=45):
         if self.left_wrist is not None and self.left_elbow is not None:
@@ -340,10 +367,10 @@ class BodyPose:
             return False
 
 
-def _x0_y0(x1, y1, x2, y2, offset=50):
-    sita = np.arctan2(y2 - y1, x2 - x1)
-    y0 = np.sin(sita) * offset + y2
-    x0 = np.cos(sita) * offset + x2
+def point_on_line_by_offset(x1, y1, x2, y2, offset=50):
+    theta = np.arctan2(y2 - y1, x2 - x1)
+    y0 = np.sin(theta) * offset + y2
+    x0 = np.cos(theta) * offset + x2
     return x0, y0
 
 
@@ -369,6 +396,20 @@ def _centroid(points):
         return [np.mean(xs), np.mean(ys), np.mean(zs)]
     else:
         return [np.mean(xs), np.mean(ys)]
+
+
+def angle_of_lines(line1, line2):
+    point1, point2 = line1
+    point3, point4 = line2
+
+    v1 = np.array((point2[0] - point1[0], point2[1] - point1[1]))
+    v2 = np.array((point4[0] - point3[0], point4[1] - point3[1]))
+    _dot = np.dot(v1, v2)
+
+    dist1 = np.linalg.norm(np.array(point1) - np.array(point2))
+    dist2 = np.linalg.norm(np.array(point3) - np.array(point4))
+    theta = np.arccos(_dot / (dist1 * dist2)) / np.pi * 180
+    return theta
 
 
 def angle_2_vertical(pnt1, pnt2):
@@ -398,7 +439,7 @@ def higher(pnt1, pnt2):
 
 def max_rectangle(pose_body_parts):
     np_array = np.array(pose_body_parts)
-    print('-xxxxx-: {}'.format(np_array))
+    print('-------Points--------:\n {}'.format(np_array))
     all_y = np_array[:, 0]
     all_x = np_array[:, 1]
     max_x = np.amax(all_x)
@@ -406,7 +447,7 @@ def max_rectangle(pose_body_parts):
 
     min_x = np.amin(all_x)
     min_y = np.amin(all_y)
-
+    print('-Maximum bounding box-:\n ({},{}),({},{})'.format(min_x, min_y, max_x, max_y))
     return min_x, min_y, max_x, max_y
 
 

@@ -16,4 +16,8 @@ logs/
 training.csv
 weights.best.h5
 output/
+pose_output*/
+pose_images/
+pose/labels/
+pose/models/
 *.pyc

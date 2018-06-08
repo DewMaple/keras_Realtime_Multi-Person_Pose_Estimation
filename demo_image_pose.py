@@ -1,11 +1,15 @@
 import argparse
 import math
+import os
 import time
 
 import cv2
 import numpy as np
+from img_utils.files import images_in_dir, filename
 from scipy.ndimage.filters import gaussian_filter
 
+import geometry as geo
+# import pose.detect as pose_detector
 import util
 from config_reader import config_reader
 from model import get_testing_model
@@ -51,8 +55,7 @@ def process(input_image, params, model_params):
         heatmap = np.squeeze(output_blobs[1])  # output 1 is heatmaps
         heatmap = cv2.resize(heatmap, (0, 0), fx=model_params['stride'], fy=model_params['stride'],
                              interpolation=cv2.INTER_CUBIC)
-        heatmap = heatmap[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3],
-                  :]
+        heatmap = heatmap[:imageToTest_padded.shape[0] - pad[2], :imageToTest_padded.shape[1] - pad[3], :]
         heatmap = cv2.resize(heatmap, (oriImg.shape[1], oriImg.shape[0]), interpolation=cv2.INTER_CUBIC)
 
         paf = np.squeeze(output_blobs[0])  # output 0 is PAFs
@@ -70,7 +73,7 @@ def process(input_image, params, model_params):
     for part in range(18):
         map_ori = heatmap_avg[:, :, part]
         map = gaussian_filter(map_ori, sigma=3)
-        print('map is {}'.format(map))
+
         map_left = np.zeros(map.shape)
         map_left[1:, :] = map[:-1, :]
         map_right = np.zeros(map.shape)
@@ -82,29 +85,26 @@ def process(input_image, params, model_params):
 
         peaks_binary = np.logical_and.reduce(
             (map >= map_left, map >= map_right, map >= map_up, map >= map_down, map > params['thre1']))
-        # peaks_binary = map > params['thre1']
         peaks = list(zip(np.nonzero(peaks_binary)[1], np.nonzero(peaks_binary)[0]))  # note reverse
-
         peaks_with_score = [x + (map_ori[x[1], x[0]],) for x in peaks]
         id = range(peak_counter, peak_counter + len(peaks))
         peaks_with_score_and_id = [peaks_with_score[i] + (id[i],) for i in range(len(id))]
 
         all_peaks.append(peaks_with_score_and_id)
         peak_counter += len(peaks)
+
     connection_all = []
     special_k = []
     mid_num = 10
 
     for k in range(len(mapIdx)):
         score_mid = paf_avg[:, :, [x - 19 for x in mapIdx[k]]]
-        print('score shape is: {}'.format(score_mid.shape))
-        print('score is: {}'.format(score_mid))
         candA = all_peaks[limbSeq[k][0] - 1]
         candB = all_peaks[limbSeq[k][1] - 1]
         nA = len(candA)
         nB = len(candB)
         indexA, indexB = limbSeq[k]
-        if (nA != 0 and nB != 0):
+        if nA != 0 and nB != 0:
             connection_candidate = []
             for i in range(nA):
                 for j in range(nB):
@@ -115,7 +115,7 @@ def process(input_image, params, model_params):
                         continue
                     vec = np.divide(vec, norm)
 
-                    startend = list(zip(np.linspace(candA[i][0], candB[j][0], num=mid_num), \
+                    startend = list(zip(np.linspace(candA[i][0], candB[j][0], num=mid_num),
                                         np.linspace(candA[i][1], candB[j][1], num=mid_num)))
 
                     vec_x = np.array(
@@ -139,19 +139,16 @@ def process(input_image, params, model_params):
             connection = np.zeros((0, 5))
             for c in range(len(connection_candidate)):
                 i, j, s = connection_candidate[c][0:3]
-                if (i not in connection[:, 3] and j not in connection[:, 4]):
-                    print('------------I do not know what the funcking code is going to do-------------')
+                if i not in connection[:, 3] and j not in connection[:, 4]:
                     connection = np.vstack([connection, [candA[i][3], candB[j][3], s, i, j]])
-                    print('connection is {}'.format(connection))
-                    if (len(connection) >= min(nA, nB)):
+                    if len(connection) >= min(nA, nB):
                         break
 
             connection_all.append(connection)
         else:
             special_k.append(k)
             connection_all.append([])
-    print('connection all is {}'.format(connection_all))
-    print('connection all len is {}'.format(len(connection_all)))
+
     # last number in each row is the total parts number of that person
     # the second last number in each row is the score of the overall configuration
     subset = -1 * np.ones((0, 20))
@@ -173,7 +170,7 @@ def process(input_image, params, model_params):
 
                 if found == 1:
                     j = subset_idx[0]
-                    if (subset[j][indexB] != partBs[i]):
+                    if subset[j][indexB] != partBs[i]:
                         subset[j][indexB] = partBs[i]
                         subset[j][-1] += 1
                         subset[j][-2] += candidate[partBs[i].astype(int), 2] + connection_all[k][i][2]
@@ -201,53 +198,58 @@ def process(input_image, params, model_params):
                     subset = np.vstack([subset, row])
 
     # delete some rows of subset which has few parts occur
-    deleteIdx = [];
+    deleteIdx = []
     for i in range(len(subset)):
         if subset[i][-1] < 4 or subset[i][-2] / subset[i][-1] < 0.4:
             deleteIdx.append(i)
     subset = np.delete(subset, deleteIdx, axis=0)
 
     canvas = cv2.imread(input_image)  # B,G,R order
-    # for i in range(18):
-    #     for j in range(len(all_peaks[i])):
-    #         cv2.circle(canvas, all_peaks[i][j][0:2], 4, colors[i], thickness=-1)
+    print('---------len subset: {}'.format(len(subset)))
 
-    stickwidth = 4
+    persons_limbs = []
+    height, width = oriImg.shape[:2]
 
-    for i in range(17):
-        for n in range(len(subset)):
+    for n in range(len(subset)):
+        limbs = []
+        for i in range(17):
             index = subset[n][np.array(limbSeq[i]) - 1]
             if -1 in index:
+                limbs.append([])
                 continue
-            cur_canvas = canvas.copy()
             Y = candidate[index.astype(int), 0]
             X = candidate[index.astype(int), 1]
-            print('X length is {}'.format(len(X)))
-            print('Y length is {}'.format(len(Y)))
-            mX = np.mean(X)
-            mY = np.mean(Y)
-            length = ((X[0] - X[1]) ** 2 + (Y[0] - Y[1]) ** 2) ** 0.5
-            angle = math.degrees(math.atan2(X[0] - X[1], Y[0] - Y[1]))
-            polygon = cv2.ellipse2Poly((int(mY), int(mX)), (int(length / 2), stickwidth), int(angle), 0,
-                                       360, 1)
-            cv2.fillConvexPoly(cur_canvas, polygon, colors[i])
-            canvas = cv2.addWeighted(canvas, 0.4, cur_canvas, 0.6, 0)
+            limbs.append([(X[0], Y[0]), (X[1], Y[1])])
+            cv2.line(canvas, (int(Y[0]), int(X[0])), (int(Y[1]), int(X[1])), colors[n % 18], 2)
 
+        persons_limbs.append(limbs)
+    for i, limbs in enumerate(persons_limbs):
+        body_pose = geo.BodyPose.from_connected_body_parts(limbs)
+        x1, y1, x2, y2 = body_pose.mbr()
+        x2 = min(x2, width)
+        y2 = min(y2, height)
+        # label, most_probability = pose_detector.detect(canvas[y1:y2, x1:x2])
+        # if most_probability > 0.9:
+        cv2.rectangle(canvas, (int(x1), int(y1)), (int(x2), int(y2)), colors[i % 18], 2)
+        #     cv2.putText(canvas, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 255, 0), 2)
+
+        # cv2.imshow('ooo', canvas[y1:y2, x1:x2])
+        # cv2.waitKey(0)
+    # cv2.destroyAllWindows()
     return canvas
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--image', type=str, required=True, help='input image')
-    parser.add_argument('--output', type=str, default='result.png', help='output image')
+    parser.add_argument('--images', type=str, required=True, help='input images dir')
+    parser.add_argument('--output', type=str, default='result.png', help='output images dir')
     parser.add_argument('--model', type=str, default='model/keras/model.h5', help='path to the weights file')
 
     args = parser.parse_args()
-    input_image = args.image
-    output = args.output
+    input_images = args.images
+    outputs = args.output
     keras_weights_file = args.model
 
-    tic = time.time()
     print('start processing...')
 
     # load model
@@ -259,13 +261,16 @@ if __name__ == '__main__':
 
     # load config
     params, model_params = config_reader()
-
+    print('params:\n {}'.format(params))
+    print('model_params:\n {}'.format(model_params))
     # generate image with body parts
-    canvas = process(input_image, params, model_params)
+    image_files = images_in_dir(input_images)
+    for im_f in image_files:
+        tic = time.time()
+        canvas = process(im_f, params, model_params)
+        toc = time.time()
+        print ('processing time is %.5f' % (toc - tic))
 
-    toc = time.time()
-    print ('processing time is %.5f' % (toc - tic))
-
-    cv2.imwrite(output, canvas)
+        cv2.imwrite(os.path.join(outputs, filename(im_f)), canvas)
 
     cv2.destroyAllWindows()
