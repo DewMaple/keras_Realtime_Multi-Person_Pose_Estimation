@@ -41,7 +41,7 @@ def process(input_image, params, model_params):
         scale = multiplier[m]
 
         imageToTest = cv2.resize(oriImg, (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
-        imageToTest_padded, pad = util.padRightDownCorner(imageToTest, model_params['stride'],
+        imageToTest_padded, pad = util.pad_right_down_corner(imageToTest, model_params['stride'],
                                                           model_params['padValue'])
 
         input_img = np.transpose(np.float32(imageToTest_padded[:, :, :, np.newaxis]),

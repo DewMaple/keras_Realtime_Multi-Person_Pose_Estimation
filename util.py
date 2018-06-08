@@ -1,6 +1,7 @@
 from io import StringIO
 
 import PIL.Image
+import cv2
 import numpy as np
 from IPython.display import Image, display
 

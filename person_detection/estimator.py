@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from body_skeleton import BodySkeleton
+from person_detection.body_skeleton import BodySkeleton
 from config_reader import config_reader
 from model import get_testing_model
 from util import pad_right_down_corner, resize
@@ -35,7 +35,7 @@ class MultiPersonPoseEstimator:
         """
         height, width = self.im_height, self.im_width
 
-        multiplier = [x * model_params['boxsize'] / height for x in model_params['boxsize']]
+        multiplier = [x * model_params['boxsize'] / height for x in params['scale_search']]
         multiplier_len = len(multiplier)
 
         heat_map_average = np.zeros((height, width, 19))
