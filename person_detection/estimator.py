@@ -1,9 +1,9 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
-from person_detection.body_skeleton import BodySkeleton
 from config_reader import config_reader
 from model import get_testing_model
+from person_detection.body_skeleton import BodySkeleton
 from util import pad_right_down_corner, resize
 
 LIMB_SEQ = [[2, 3], [2, 6], [3, 4], [4, 5], [6, 7], [7, 8], [2, 9],
@@ -214,7 +214,7 @@ class MultiPersonPoseEstimator:
         for person in persons:
             x1, y1, x2, y2 = person.minimum_bounding_box()
             x1 = max(x1 - thickness, 0)
-            y1 = max(y1 - 1.5 * thickness, 0)
+            y1 = max(y1 - thickness, 0)
             x2 = min(x2 + thickness, self.im_width)
             y2 = min(y2 + thickness, self.im_height)
             boxes.append((x1, y1, x2, y2))
